@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef struct {
   uint16_t  machine;        // Magic number
@@ -75,8 +76,25 @@ static int  getShellcode(file *bin) {
     return (-1);
   if ((bin->start = mmap(NULL, stats.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) == MAP_FAILED)
     return (-1);
+  dprintf(2, "Hex here: %x\n", *((char *)bin->start));
   bin->header = NULL;
   close(fd);
+  return (0);
+}
+
+static int  createNewBin(file bin, file shellcode) {
+  int   fd;
+  void *newBin;
+
+  if ((newBin = mmap(NULL, bin.size + shellcode.size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
+    return (-1);
+  memcpy(newBin, bin.start, bin.size);
+  memcpy(newBin + bin.size, shellcode.start, shellcode.size);
+  if ((fd = open("./packed.exe", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH | S_IROTH)) == -1)
+    return (1);
+  write(fd, newBin, bin.size + shellcode.size);
+  close(fd);
+  munmap(newBin, bin.size + shellcode.size);
   return (0);
 }
 
@@ -92,11 +110,14 @@ int     main(int argc, const char **argv) {
   }
   if (getHeader(argv[1], &bin) == -1)
     return (1);
-  /* sectionHeader = ((void *)bin.header) + sizeof(PE64_Ehdr) + bin.header->optHeaderSize; */
-  /* optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr); */
+  sectionHeader = ((void *)bin.header) + sizeof(PE64_Ehdr) + bin.header->optHeaderSize;
+  optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
   dprintf(1, "Entry point: %p\n", NULL + optHeader->entryPoint);
-  /* write(1, &(sectionHeader->name), 8); */
+  write(1, &(sectionHeader->name), 8);
   if (getShellcode(&shellcode) == -1)
+    return (1);
+  optHeader->sizeofcode += shellcode.size;
+  if (createNewBin(bin, shellcode) == -1)
     return (1);
   munmap(bin.start, bin.size);
   munmap(shellcode.start, shellcode.size);
