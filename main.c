@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdlib.h>
 
 typedef struct {
   uint16_t  machine;        // Magic number
@@ -40,11 +41,12 @@ typedef struct {
 }   PE64_OptHdr;
 
 typedef struct {
-  size_t  size;
-  void    *start;
+  size_t    size;
+  void      *start;
+  PE64_Ehdr *header;
 }   file;
 
-int   getStart(const char *filename, file *file) {
+static int   getHeader(const char *filename, file *bin) {
   int         fd;
   struct stat stats;
 
@@ -52,17 +54,35 @@ int   getStart(const char *filename, file *file) {
     return (-1);
   if (stat(filename, &stats) == -1)
     return (-1);
-  if ((file->start = mmap(NULL, stats.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) == MAP_FAILED)
+  if ((bin->start = mmap(NULL, stats.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) == MAP_FAILED)
     return (-1);
-  file->size = stats.st_size;
+  bin->size = stats.st_size;
+  bin->header = bin->start + *((uint32_t *)(bin->start + 0x3c)) + 4;
+  close(fd);
+  return (0);
+}
+
+static int  getShellcode(file *bin) {
+  int         fd;
+  struct stat stats;
+
+  if (system("nasm -o shellcode -win64 shellcode.s") == -1)
+    return (-1);
+  if (stat("shellcode", &stats) == -1)
+    return (-1);
+  bin->size = stats.st_size;
+  if ((fd = open("shellcode", O_RDONLY)) == -1)
+    return (-1);
+  if ((bin->start = mmap(NULL, stats.st_size, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0)) == MAP_FAILED)
+    return (-1);
+  bin->header = NULL;
   close(fd);
   return (0);
 }
 
 int     main(int argc, const char **argv) {
-  int           fd;
-  file          file;
-  PE64_Ehdr     *header;
+  file          bin;
+  file          shellcode;
   PE64_OptHdr   *optHeader;
   PE64_Shdr     *sectionHeader;
 
@@ -70,18 +90,16 @@ int     main(int argc, const char **argv) {
     dprintf(2, "Not right number or arguments\n");
     return (1);
   }
-  if (getStart(argv[1], &file) == -1)
+  if (getHeader(argv[1], &bin) == -1)
     return (1);
-  header = file.start + *((uint32_t *)(file.start + 0x3c)) + 4;
-  dprintf(1, "Header: %i, %i, %i, %i,%i,%i,%i\n", header->machine, header->shnum, header->timestamp, header->symTbl, header->symNum, header->optHeaderSize, header->flags);
-  sectionHeader = ((void *)header) + sizeof(PE64_Ehdr) + header->optHeaderSize;
-  optHeader = ((void *)header) + sizeof(PE64_Ehdr);
+  /* sectionHeader = ((void *)bin.header) + sizeof(PE64_Ehdr) + bin.header->optHeaderSize; */
+  /* optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr); */
   dprintf(1, "Entry point: %p\n", NULL + optHeader->entryPoint);
-  write(1, &(sectionHeader->name), 8);
-  if ((fd = open("./packed.exe", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH | S_IROTH)) == -1)
+  /* write(1, &(sectionHeader->name), 8); */
+  if (getShellcode(&shellcode) == -1)
     return (1);
-  write(fd, file.start, file.size);
-  close(fd);
-  munmap(file.start, file.size);
+  munmap(bin.start, bin.size);
+  munmap(shellcode.start, shellcode.size);
+  dprintf(1, "Done !\n");
   return (0);
 }
