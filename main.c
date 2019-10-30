@@ -85,11 +85,18 @@ static int  getShellcode(file *bin) {
 static int  createNewBin(file bin, file shellcode) {
   int   fd;
   void *newBin;
+  PE64_OptHdr *optHeader;
 
-  if ((newBin = mmap(NULL, bin.size + shellcode.size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
+  optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
+  if ((newBin = mmap(NULL, bin.size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
     return (-1);
-  memcpy(newBin, bin.start, bin.size);
-  memcpy(newBin + bin.size, shellcode.start, shellcode.size);
+  dprintf(1, "Shellcode size: %zu\n", shellcode.size);
+  memcpy(newBin, bin.start, 0x610);
+  memset(newBin + 0x610, 0, shellcode.size);
+  memcpy(newBin + 0x610, shellcode.start, 16);
+  memcpy(newBin + 0x610 + shellcode.size, bin.start + 0x610 + shellcode.size, bin.size - 0x610 - shellcode.size);
+  /* memcpy(newBin, bin.start, bin.size); */
+  /* memcpy(newBin + bin.size, shellcode.start, shellcode.size); */
   if ((fd = open("./packed.exe", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH | S_IROTH)) == -1)
     return (1);
   write(fd, newBin, bin.size + shellcode.size);
@@ -112,11 +119,13 @@ int     main(int argc, const char **argv) {
     return (1);
   sectionHeader = ((void *)bin.header) + sizeof(PE64_Ehdr) + bin.header->optHeaderSize;
   optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
-  dprintf(1, "Entry point: %p\n", NULL + optHeader->entryPoint);
   write(1, &(sectionHeader->name), 8);
   if (getShellcode(&shellcode) == -1)
     return (1);
   optHeader->sizeofcode += shellcode.size;
+  dprintf(1, "Old Entry point: %p\n", NULL + optHeader->entryPoint);
+  /* optHeader->entryPoint = bin.size + 1; */
+  dprintf(1, "New entry point: %p\n", NULL + optHeader->entryPoint);
   if (createNewBin(bin, shellcode) == -1)
     return (1);
   munmap(bin.start, bin.size);
