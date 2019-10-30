@@ -90,13 +90,9 @@ static int  createNewBin(file bin, file shellcode) {
   optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
   if ((newBin = mmap(NULL, bin.size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
     return (-1);
-  dprintf(1, "Shellcode size: %zu\n", shellcode.size);
   memcpy(newBin, bin.start, 0x610);
-  memset(newBin + 0x610, 0, shellcode.size);
-  memcpy(newBin + 0x610, shellcode.start, 16);
+  memcpy(newBin + 0x610, shellcode.start, shellcode.size);
   memcpy(newBin + 0x610 + shellcode.size, bin.start + 0x610 + shellcode.size, bin.size - 0x610 - shellcode.size);
-  /* memcpy(newBin, bin.start, bin.size); */
-  /* memcpy(newBin + bin.size, shellcode.start, shellcode.size); */
   if ((fd = open("./packed.exe", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH | S_IROTH)) == -1)
     return (1);
   write(fd, newBin, bin.size + shellcode.size);
