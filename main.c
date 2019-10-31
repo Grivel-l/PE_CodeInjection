@@ -82,22 +82,62 @@ static int  getShellcode(file *bin) {
   return (0);
 }
 
+static int  updateOffsets(file bin, size_t size) {
+  size_t      i;
+  uint32_t    paddr;
+  PE64_Shdr   *section;
+  PE64_OptHdr *optHeader;
+
+  i = 0;
+  optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
+  section = ((void *)optHeader) + bin.header->optHeaderSize;
+  paddr = section->paddr;
+  while (i < bin.header->shnum) {
+    if (section->paddr > paddr) {
+      dprintf(1, "Updating offset of ");
+      write(1, &(section->name), 8);
+      dprintf(1, "\n");
+      section->paddr += size;
+    }
+    section = ((void *)section) + sizeof(PE64_Shdr);
+    i += 1;
+  }
+  return (0);
+}
+
 static int  createNewBin(file bin, file shellcode) {
   int   fd;
   void *newBin;
   PE64_OptHdr *optHeader;
+  PE64_Shdr   *sectionHeader;
 
   optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
+  sectionHeader = ((void *)bin.header) + sizeof(PE64_Ehdr) + bin.header->optHeaderSize;
   if ((newBin = mmap(NULL, bin.size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
     return (-1);
-  memcpy(newBin, bin.start, 0x610);
-  memcpy(newBin + 0x610, shellcode.start, shellcode.size);
-  memcpy(newBin + 0x610 + shellcode.size, bin.start + 0x610 + shellcode.size, bin.size - 0x610 - shellcode.size);
+  /* memcpy(newBin, bin.start, 0xae0); */
+  /* memcpy(newBin + 0xae0, shellcode.start, shellcode.size); */
+  /* memcpy(newBin + 0xae0 + shellcode.size, bin.start + 0xae0 + shellcode.size, bin.size - 0xae0 - shellcode.size); */
+
+  /* memcpy(newBin, bin.start, bin.size); */
+  /* memcpy(newBin, shellcode.start, shellcode.size); */
+
+  dprintf(1, "Shellcode size: %zu\n", shellcode.size);
+  optHeader->sizeofcode += shellcode.size;
+  sectionHeader->filesz += shellcode.size;
+  sectionHeader->memsz += shellcode.size;
+  memcpy(newBin, bin.start, sectionHeader->paddr + sectionHeader->filesz - shellcode.size);
+  memcpy(newBin + sectionHeader->filesz - shellcode.size, shellcode.start, shellcode.size);
+  memcpy(newBin + sectionHeader->filesz, bin.start + sectionHeader->paddr + sectionHeader->filesz - shellcode.size, bin.size - sectionHeader->paddr + sectionHeader->filesz - shellcode.size);
   if ((fd = open("./packed.exe", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH | S_IROTH)) == -1)
     return (1);
-  write(fd, newBin, bin.size + shellcode.size);
+  bin.start = newBin;
+  bin.header = newBin + *((uint32_t *)(newBin + 0x3c)) + 4;
+  bin.size += shellcode.size;
+  updateOffsets(bin, shellcode.size);
+  write(fd, newBin, bin.size);
   close(fd);
-  munmap(newBin, bin.size + shellcode.size);
+  munmap(newBin, bin.size);
   return (0);
 }
 
@@ -116,9 +156,9 @@ int     main(int argc, const char **argv) {
   sectionHeader = ((void *)bin.header) + sizeof(PE64_Ehdr) + bin.header->optHeaderSize;
   optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
   write(1, &(sectionHeader->name), 8);
+  dprintf(1, "Entry point in file offset: %p\n", sectionHeader->paddr + (optHeader->entryPoint - sectionHeader->vaddr));
   if (getShellcode(&shellcode) == -1)
     return (1);
-  optHeader->sizeofcode += shellcode.size;
   dprintf(1, "Old Entry point: %p\n", NULL + optHeader->entryPoint);
   /* optHeader->entryPoint = bin.size + 1; */
   dprintf(1, "New entry point: %p\n", NULL + optHeader->entryPoint);
