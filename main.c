@@ -141,6 +141,63 @@ static int  createNewBin(file bin, file shellcode) {
   return (0);
 }
 
+static int  writeToFile(file bin) {
+  int   fd;
+
+  if ((fd = open("./packed.exe", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH | S_IROTH)) == -1)
+    return (-1);
+  write(fd, bin.start, bin.size);
+  close(fd);
+  dprintf(1, "Wrote to file\n");
+  return (0);
+}
+
+static PE64_Shdr  getNewHeader(void) {
+  PE64_Shdr shHeader;
+  
+  memcpy(&(shHeader.name), "Hello", 6);
+  /* shHeader.memsz = ; */
+  /* shHeader.vaddr = ; */
+  /* shHeader.filesz = ; */
+  /* shHeader.paddr = ; */
+  /* shHeader.prelocaddr = ; */
+  shHeader.pLineNumbers = 0;
+  shHeader.relocationCount = 0;
+  shHeader.lineNumbersCount = 0;
+  shHeader.flags = 0;
+  return (shHeader);
+}
+
+static int  copyContent(file *bin, uint32_t loc, void *content, size_t contentSize, int overwrite) {
+  void    *newBin;
+
+  if ((newBin = mmap(NULL, contentSize + bin->size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
+    return (-1);
+  memcpy(newBin, bin->start, loc);
+  memcpy(newBin + loc, content, contentSize);
+  if (overwrite) {
+    memcpy(newBin + loc + contentSize, ((void *)bin->start) + loc + contentSize, bin->size - loc - contentSize);
+  } else {
+    memcpy(newBin + loc + contentSize, ((void *)bin->start) + loc, bin->size - loc);
+  }
+  munmap(bin->start, bin->size);
+  bin->start = newBin;
+  bin->size += contentSize;
+  bin->header = bin->start + *((uint32_t *)(bin->start + 0x3c)) + 4;
+  return (0);
+}
+
+static int  createNewSectionHeader(file *bin) {
+  PE64_Shdr   shHeader;
+  uint32_t    lastSection;
+
+  bin->header->shnum += 1;
+  shHeader = getNewHeader();
+  lastSection = ((void *)bin->header) - ((void *)bin->start) + bin->header->optHeaderSize + sizeof(PE64_Ehdr) + bin->header->shnum * sizeof(PE64_Shdr);
+  // TODO Check if next sizeof(PE64_Shdr) are 0
+  return (copyContent(bin, lastSection, &shHeader, sizeof(PE64_Shdr), 1));
+}
+
 int     main(int argc, const char **argv) {
   file          bin;
   file          shellcode;
@@ -156,14 +213,16 @@ int     main(int argc, const char **argv) {
   sectionHeader = ((void *)bin.header) + sizeof(PE64_Ehdr) + bin.header->optHeaderSize;
   optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
   write(1, &(sectionHeader->name), 8);
-  dprintf(1, "Entry point in file offset: %p\n", sectionHeader->paddr + (optHeader->entryPoint - sectionHeader->vaddr));
-  if (getShellcode(&shellcode) == -1)
+  dprintf(1, "Entry point relative to text section: %p\n", sectionHeader->paddr + (optHeader->entryPoint - sectionHeader->vaddr));
+  if (createNewSectionHeader(&bin) == -1)
     return (1);
-  dprintf(1, "Old Entry point: %p\n", NULL + optHeader->entryPoint);
-  /* optHeader->entryPoint = bin.size + 1; */
-  dprintf(1, "New entry point: %p\n", NULL + optHeader->entryPoint);
-  if (createNewBin(bin, shellcode) == -1)
-    return (1);
+  dprintf(1, "Created new section\n");
+  /* if (getShellcode(&shellcode) == -1) */
+  /*   return (1); */
+  /* if (createNewBin(bin, shellcode) == -1) */
+  /*   return (1); */
+  if (writeToFile(bin) == -1)
+    return (-1);
   munmap(bin.start, bin.size);
   munmap(shellcode.start, shellcode.size);
   dprintf(1, "Done !\n");
