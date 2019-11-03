@@ -1,4 +1,4 @@
 [bits 64]
 
 section .text
-  jmp $
+  nop
