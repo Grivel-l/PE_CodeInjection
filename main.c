@@ -248,9 +248,8 @@ static int  resizeCodeSection(file *bin, file shellcode) {
   copyContent(bin, shHeader->paddr + shHeader->memsz, shellcode.start, shellcode.size, 0);
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
-  dprintf(1, "HelloWorld\n");
-  codeSection = ((void *)bin->start) + shHeader->paddr;
   shHeader->memsz += shellcode.size;
+  shHeader->filesz += shellcode.size;
   /* if (shHeader->memsz > shHeader->filesz) { */
   /*   shHeader += optHeader->fileAlignment; */
   /* } */
