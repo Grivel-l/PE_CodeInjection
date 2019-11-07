@@ -45,7 +45,7 @@ static int  getShellcode(file *bin, uint32_t alignment) {
   int         fd;
   struct stat stats;
 
-  if (system("nasm -o shellcode -win64 srcs/shellcode.s") == -1)
+  if (system("nasm -o shellcode -f bin srcs/shellcode.s") == -1)
     return (-1);
   if (stat("shellcode", &stats) == -1)
     return (-1);
