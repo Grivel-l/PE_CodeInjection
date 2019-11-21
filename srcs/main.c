@@ -7,9 +7,9 @@ static size_t align(size_t size, size_t alignment) {
 static int  patchShellcode(file *shellcode, uint32_t entryPoint, uint32_t oldEntryPoint) {
   char    ins[5];
   void    *header;
-  size_t  address;
+  uint32_t  address;
 
-  address = -(entryPoint - oldEntryPoint + shellcode->size);
+  address = -(entryPoint - oldEntryPoint + shellcode->size + 5);
   ins[0] = 0xe9;
   ins[1] = (address >> 0) & 0xff;
   ins[2] = (address >> 8) & 0xff;
