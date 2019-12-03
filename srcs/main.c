@@ -106,9 +106,10 @@ static int  resizeCodeSection(file *bin, file shellcode) {
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
   optHeader->entryPoint = shHeader->vaddr + shHeader->memsz;
   shHeader->memsz += shellcode.size;
+  if (bin->header->symTbl >= shHeader->paddr + shHeader->filesz) {
+    bin->header->symTbl += aligned;
+  }
   shHeader->filesz += aligned;
-  // TODO only if symtbl is after code section
-  bin->header->symTbl += aligned;
   i = 0;
   codeSection = ((void *)optHeader) + bin->header->optHeaderSize;
   while (i < bin->header->shnum) {
