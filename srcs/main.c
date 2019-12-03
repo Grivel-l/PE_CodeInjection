@@ -69,49 +69,52 @@ static int  writeToFile(file bin) {
   return (0);
 }
 
-static int  copyContent(file *bin, uint32_t loc, void *content, size_t contentSize, int overwrite) {
+static int  copyContent(file *bin, uint32_t loc, file shellcode, size_t aligned, int overwrite) {
   void    *newBin;
 
-  if ((newBin = mmap(NULL, contentSize + bin->size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
+  if ((newBin = mmap(NULL, aligned + bin->size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0)) == MAP_FAILED)
     return (-1);
   memcpy(newBin, bin->start, loc);
-  memcpy(newBin + loc, content, contentSize);
+  memcpy(newBin + loc, shellcode.start, shellcode.size);
+  memset(newBin + loc + shellcode.size, 0, aligned - shellcode.size);
   if (overwrite) {
-    memcpy(newBin + loc + contentSize, ((void *)bin->start) + loc + contentSize, bin->size - loc - contentSize);
+    memcpy(newBin + loc + aligned, ((void *)bin->start) + loc + shellcode.size, bin->size - loc - shellcode.size);
   } else {
-    memcpy(newBin + loc + contentSize, ((void *)bin->start) + loc, bin->size - loc);
+    memcpy(newBin + loc + aligned, ((void *)bin->start) + loc, bin->size - loc);
   }
   munmap(bin->start, bin->size);
   bin->start = newBin;
-  bin->size += contentSize;
+  bin->size += aligned;
   bin->header = bin->start + *((uint32_t *)(bin->start + 0x3c)) + 4;
   return (0);
 }
 
 static int  resizeCodeSection(file *bin, file shellcode) {
   size_t      i;
+  size_t      aligned;
   PE64_Shdr   *shHeader;
   PE64_OptHdr *optHeader;
   PE64_Shdr   *codeSection;
 
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
-  copyContent(bin, shHeader->paddr + shHeader->memsz, shellcode.start, align(shellcode.size, optHeader->fileAlignment), 0);
+  aligned = align(shellcode.size, optHeader->fileAlignment);
+  copyContent(bin, shHeader->paddr + shHeader->memsz, shellcode, aligned, 0);
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   optHeader->sizeofcode += shellcode.size;
   optHeader->sizeOfImage += shellcode.size;
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
   optHeader->entryPoint = shHeader->vaddr + shHeader->memsz;
   shHeader->memsz += shellcode.size;
-  shHeader->filesz += align(shellcode.size, optHeader->fileAlignment);
+  shHeader->filesz += aligned;
   // TODO only if symtbl is after code section
-  bin->header->symTbl += align(shellcode.size, optHeader->fileAlignment);
+  bin->header->symTbl += aligned;
   i = 0;
   codeSection = ((void *)optHeader) + bin->header->optHeaderSize;
   while (i < bin->header->shnum) {
     shHeader = ((void *)optHeader) + bin->header->optHeaderSize + sizeof(PE64_Shdr) * i;
-    if (shHeader->paddr > codeSection->paddr + (codeSection->memsz - align(shellcode.size, optHeader->fileAlignment)))
-      shHeader->paddr += align(shellcode.size, optHeader->fileAlignment);
+    if (shHeader->paddr > codeSection->paddr + (codeSection->memsz - aligned))
+      shHeader->paddr += aligned;
     i += 1;
   }
   return (0);
