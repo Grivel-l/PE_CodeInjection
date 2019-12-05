@@ -99,7 +99,7 @@ static int  resizeCodeSection(file *bin, file shellcode) {
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
   if (shHeader->vaddr + shHeader->memsz + shellcode.size >= (shHeader + 1)->vaddr) {
-    dprintf(2, "Not enough place in code section to inject shellcode\n");
+    dprintf(2, "Not enough space in code section to inject shellcode\n");
     return (-1);
   }
   aligned = align(shellcode.size, optHeader->fileAlignment);
