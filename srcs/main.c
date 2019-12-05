@@ -98,18 +98,21 @@ static int  resizeCodeSection(file *bin, file shellcode) {
 
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
+  if (shHeader->vaddr + shHeader->memsz + shellcode.size >= (shHeader + 1)->vaddr) {
+    dprintf(2, "Not enough place in code section to inject shellcode\n");
+    return (-1);
+  }
   aligned = align(shellcode.size, optHeader->fileAlignment);
   copyContent(bin, shHeader->paddr + shHeader->memsz, shellcode, aligned, 0);
   optHeader = ((void *)bin->header) + sizeof(PE64_Ehdr);
-  optHeader->sizeofcode += shellcode.size;
+  optHeader->sizeofcode += aligned;
   optHeader->sizeOfImage += shellcode.size;
   shHeader = ((void *)optHeader) + bin->header->optHeaderSize;
   optHeader->entryPoint = shHeader->vaddr + shHeader->memsz;
-  shHeader->memsz += shellcode.size;
-  if (bin->header->symTbl >= shHeader->paddr + shHeader->filesz) {
+  if (bin->header->symTbl >= shHeader->paddr + shHeader->filesz)
     bin->header->symTbl += aligned;
-  }
   shHeader->filesz += aligned;
+  shHeader->memsz += shellcode.size;
   i = 0;
   codeSection = ((void *)optHeader) + bin->header->optHeaderSize;
   while (i < bin->header->shnum) {
@@ -140,8 +143,11 @@ int     main(int argc, const char **argv) {
   shHeader = ((void *)optHeader) + bin.header->optHeaderSize;
   if (patchShellcode(&shellcode, shHeader->vaddr + shHeader->memsz, optHeader->entryPoint) == -1)
     return (1);
-  if (resizeCodeSection(&bin, shellcode) == -1)
+  if (resizeCodeSection(&bin, shellcode) == -1) {
+    munmap(bin.start, bin.size);
+    munmap(shellcode.start, shellcode.size);
     return (1);
+  }
   if (writeToFile(bin) == -1)
     return (-1);
   munmap(bin.start, bin.size);
